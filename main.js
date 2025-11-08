@@ -71,35 +71,72 @@ function processImage(imageUrl) {
 
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageData.data;
+        const width = canvas.width;
+        const height = canvas.height;
 
         // Get the color of the center pixel as the target "pink"
-        const centerX = Math.floor(canvas.width / 2);
-        const centerY = Math.floor(canvas.height / 2);
-        const centerIndex = (centerY * canvas.width + centerX) * 4;
+        const centerX = Math.floor(width / 2);
+        const centerY = Math.floor(height / 2);
+        const centerIndex = (centerY * width + centerX) * 4;
         const targetColor = {
             r: data[centerIndex],
             g: data[centerIndex + 1],
             b: data[centerIndex + 2]
         };
 
-        const colorThreshold = 120; // How similar colors can be to be replaced. Increased from 80.
-        let screenBounds = { minX: canvas.width, minY: canvas.height, maxX: 0, maxY: 0 };
-        let foundScreen = false;
-
+        const colorThreshold = 120;
+        
+        // Pass 1: Create a mask of the screen pixels
+        const isScreenPixel = new Array(width * height).fill(false);
         for (let i = 0; i < data.length; i += 4) {
             const currentColor = { r: data[i], g: data[i+1], b: data[i+2] };
             const distance = colorDistance(currentColor, targetColor);
-
             if (distance < colorThreshold) {
-                // Replace with black
+                isScreenPixel[i / 4] = true;
+            }
+        }
+
+        // Pass 2: Dilate the mask to include edge pixels
+        const dilatedIsScreenPixel = new Array(width * height).fill(false);
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let isNeighborScreen = false;
+                // Check 3x3 neighborhood
+                for (let j = -1; j <= 1; j++) {
+                    for (let i = -1; i <= 1; i++) {
+                        const checkX = x + i;
+                        const checkY = y + j;
+                        if (checkX >= 0 && checkX < width && checkY >= 0 && checkY < height) {
+                            if (isScreenPixel[checkY * width + checkX]) {
+                                isNeighborScreen = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (isNeighborScreen) break;
+                }
+                if (isNeighborScreen) {
+                    dilatedIsScreenPixel[y * width + x] = true;
+                }
+            }
+        }
+
+        // Pass 3: Apply the dilated mask to the image and calculate bounds
+        let screenBounds = { minX: width, minY: height, maxX: 0, maxY: 0 };
+        let foundScreen = false;
+
+        for (let i = 0; i < data.length; i += 4) {
+            const pixelIndex = i / 4;
+            if (dilatedIsScreenPixel[pixelIndex]) {
+                 // Replace with black
                 data[i] = 0;
                 data[i + 1] = 0;
                 data[i + 2] = 0;
                 // Keep original alpha
 
                 // Update screen bounding box
-                const x = (i / 4) % canvas.width;
-                const y = Math.floor((i / 4) / canvas.width);
+                const x = pixelIndex % width;
+                const y = Math.floor(pixelIndex / width);
                 screenBounds.minX = Math.min(screenBounds.minX, x);
                 screenBounds.minY = Math.min(screenBounds.minY, y);
                 screenBounds.maxX = Math.max(screenBounds.maxX, x);
