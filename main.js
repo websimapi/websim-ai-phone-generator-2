@@ -90,18 +90,37 @@ function processImage(imageUrl) {
 
         // Process pixels in a single pass with blending
         for (let i = 0; i < data.length; i += 4) {
-            const currentColor = { r: data[i], g: data[i+1], b: data[i+2] };
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const a = data[i + 3];
+
+            // Skip transparent pixels
+            if (a === 0) continue;
+
+            const currentColor = { r, g, b };
             const distance = colorDistance(currentColor, targetColor);
 
-            // Calculate blend factor (0 = no change, 1 = fully black)
-            // This creates a smooth transition instead of a hard cut-off at the edges.
+            // Calculate blend factor (0 = no change, 1 = fully black for screen)
             const blendFactor = Math.min(1, Math.max(0, 1 - distance / colorThreshold));
 
-            if (blendFactor > 0) {
-                // Blend the pixel color towards black based on its "pink-ness"
-                data[i] = data[i] * (1 - blendFactor);
-                data[i + 1] = data[i + 1] * (1 - blendFactor);
-                data[i + 2] = data[i + 2] * (1 - blendFactor);
+            if (blendFactor > 0.1) { // Process if there's any significant pink tint
+                 // Determine if this is part of the screen or just reflection
+                const isScreen = blendFactor > 0.9;
+                
+                if (isScreen) {
+                    // This is the screen, make it black
+                    data[i] = 0;
+                    data[i + 1] = 0;
+                    data[i + 2] = 0;
+                } else {
+                    // This is likely a pink reflection on the phone body. Neutralize it.
+                    // We reduce the red and blue channels towards the green channel's level
+                    // which is effective at removing magenta/pink tints.
+                    const pinkTintFactor = blendFactor;
+                    data[i] = r * (1 - pinkTintFactor) + g * pinkTintFactor; // Reduce red towards green
+                    data[i + 2] = b * (1 - pinkTintFactor) + g * pinkTintFactor; // Reduce blue towards green
+                }
 
                 // If a pixel is significantly part of the screen, use it for bounds calculation
                 if (blendFactor > 0.5) { 
