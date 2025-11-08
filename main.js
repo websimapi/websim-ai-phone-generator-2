@@ -84,64 +84,36 @@ function processImage(imageUrl) {
             b: data[centerIndex + 2]
         };
 
-        const colorThreshold = 120;
-        
-        // Pass 1: Create a mask of the screen pixels
-        const isScreenPixel = new Array(width * height).fill(false);
-        for (let i = 0; i < data.length; i += 4) {
-            const currentColor = { r: data[i], g: data[i+1], b: data[i+2] };
-            const distance = colorDistance(currentColor, targetColor);
-            if (distance < colorThreshold) {
-                isScreenPixel[i / 4] = true;
-            }
-        }
-
-        // Pass 2: Dilate the mask to include edge pixels
-        const dilatedIsScreenPixel = new Array(width * height).fill(false);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                let isNeighborScreen = false;
-                // Check 3x3 neighborhood
-                for (let j = -1; j <= 1; j++) {
-                    for (let i = -1; i <= 1; i++) {
-                        const checkX = x + i;
-                        const checkY = y + j;
-                        if (checkX >= 0 && checkX < width && checkY >= 0 && checkY < height) {
-                            if (isScreenPixel[checkY * width + checkX]) {
-                                isNeighborScreen = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (isNeighborScreen) break;
-                }
-                if (isNeighborScreen) {
-                    dilatedIsScreenPixel[y * width + x] = true;
-                }
-            }
-        }
-
-        // Pass 3: Apply the dilated mask to the image and calculate bounds
+        const colorThreshold = 150; // Increased threshold for a softer blend
         let screenBounds = { minX: width, minY: height, maxX: 0, maxY: 0 };
         let foundScreen = false;
 
+        // Process pixels in a single pass with blending
         for (let i = 0; i < data.length; i += 4) {
-            const pixelIndex = i / 4;
-            if (dilatedIsScreenPixel[pixelIndex]) {
-                 // Replace with black
-                data[i] = 0;
-                data[i + 1] = 0;
-                data[i + 2] = 0;
-                // Keep original alpha
+            const currentColor = { r: data[i], g: data[i+1], b: data[i+2] };
+            const distance = colorDistance(currentColor, targetColor);
 
-                // Update screen bounding box
-                const x = pixelIndex % width;
-                const y = Math.floor(pixelIndex / width);
-                screenBounds.minX = Math.min(screenBounds.minX, x);
-                screenBounds.minY = Math.min(screenBounds.minY, y);
-                screenBounds.maxX = Math.max(screenBounds.maxX, x);
-                screenBounds.maxY = Math.max(screenBounds.maxY, y);
-                foundScreen = true;
+            // Calculate blend factor (0 = no change, 1 = fully black)
+            // This creates a smooth transition instead of a hard cut-off at the edges.
+            const blendFactor = Math.min(1, Math.max(0, 1 - distance / colorThreshold));
+
+            if (blendFactor > 0) {
+                // Blend the pixel color towards black based on its "pink-ness"
+                data[i] = data[i] * (1 - blendFactor);
+                data[i + 1] = data[i + 1] * (1 - blendFactor);
+                data[i + 2] = data[i + 2] * (1 - blendFactor);
+
+                // If a pixel is significantly part of the screen, use it for bounds calculation
+                if (blendFactor > 0.5) { 
+                    const pixelIndex = i / 4;
+                    const x = pixelIndex % width;
+                    const y = Math.floor(pixelIndex / width);
+                    screenBounds.minX = Math.min(screenBounds.minX, x);
+                    screenBounds.minY = Math.min(screenBounds.minY, y);
+                    screenBounds.maxX = Math.max(screenBounds.maxX, x);
+                    screenBounds.maxY = Math.max(screenBounds.maxY, y);
+                    foundScreen = true;
+                }
             }
         }
 
